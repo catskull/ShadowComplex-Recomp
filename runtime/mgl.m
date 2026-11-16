@@ -113,13 +113,17 @@ static Shader *shaders[NAMES];
 static Prog *progs[NAMES];
 static Query *queries[NAMES];
 static GLuint next_name[8] = {1, 1, 1, 1, 1, 1, 1, 1};
-static GLuint free_names[8][4096];
+// deleted names are reused; the free list holds every name, so none leak (a 4096-entry list used to drop
+// names when the game freed thousands at once, until the pool ran out and glGenBuffers returned 0)
+static GLuint free_names[8][NAMES];
 static int nfree[8];
 static GLuint gen_name(int pool) {
     if (nfree[pool]) return free_names[pool][--nfree[pool]];
-    return next_name[pool] < NAMES ? next_name[pool]++ : 0;
+    if (next_name[pool] < NAMES) return next_name[pool]++;
+    LOG_ONCE("GL name pool %d exhausted (%d names in use)", pool, NAMES - 1);
+    return 0;
 }
-static void free_name(int pool, GLuint n) { if (nfree[pool] < 4096) free_names[pool][nfree[pool]++] = n; }
+static void free_name(int pool, GLuint n) { if (nfree[pool] < NAMES) free_names[pool][nfree[pool]++] = n; }
 enum { P_BUF, P_TEX, P_RB, P_FBO, P_OBJ /* shaders and programs share a namespace */, P_QUERY };
 
 // ---------- state ----------
