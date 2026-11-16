@@ -102,7 +102,7 @@ typedef struct {
     id<MTLFunction> fn[2];
     uint32_t gen;
 } Prog;
-typedef struct { uint64_t serial; int nslots; uint32_t slot[8]; int frame; } Query;
+typedef struct { uint64_t serial; int nslots; uint32_t slot[8]; int frame; uint64_t result; int saved; } Query;
 
 #define NAMES 65536
 static Buf *bufs[NAMES];
@@ -177,6 +177,22 @@ static size_t ring_off;
 static id<MTLBuffer> vis[NBUF];
 static uint32_t vis_next;
 #define VIS_SLOTS 8192
+// queries ended in each command buffer: their results are saved before its visibility buffer is reused, as
+// the game may read them many frames later (a scene capture, e.g. a security-camera monitor, updates only
+// every few frames; reading a recycled buffer gave 0 and culled every occlusion-tested object in its view)
+static struct { GLuint id; uint64_t serial; } pend[NBUF][VIS_SLOTS];
+static int npend[NBUF];
+static void save_query_results(int f) {
+    uint64_t *vb = (uint64_t *)[vis[f] contents];
+    for (int k = 0; k < npend[f]; k++) {
+        Query *q = pend[f][k].id < NAMES ? queries[pend[f][k].id] : NULL;
+        if (!q || q->serial != pend[f][k].serial || q->frame != f || q->saved) continue;
+        uint64_t sum = 0;
+        for (int sl = 0; sl < q->nslots; sl++) sum += vb[q->slot[sl]];
+        q->result = sum; q->saved = 1;
+    }
+    npend[f] = 0;
+}
 static id<MTLBuffer> zero_attr;         // (0,0,0,1) for shader inputs whose GL array is disabled
 static id<MTLTexture> dummy2d, dummycube;
 static id<MTLSamplerState> dummy_samp;
@@ -238,6 +254,7 @@ static void begin_frame(void) {
     }];
     ring_off = 0;
     vis_next = 0;
+    save_query_results(frame_index);           // its last command buffer has completed (in-order queue)
     memset([vis[frame_index] contents], 0, VIS_SLOTS * 8);
 }
 
@@ -1588,7 +1605,7 @@ GLFN(void, glBeginQuery, GLenum target, GLuint id) {
     (void)target;
     lock();
     Query *q = id < NAMES ? queries[id] : NULL;
-    if (q) { q->nslots = 0; q->serial = serial; q->frame = frame_index; S.active_query = id; if (enc) query_slot_for_pass(); }
+    if (q) { q->nslots = 0; q->saved = 0; q->serial = serial; q->frame = frame_index; S.active_query = id; if (enc) query_slot_for_pass(); }
     unlock();
 }
 GLFN(void, glBindAttribLocation, GLuint p, GLuint idx, const char *name) {
@@ -2008,7 +2025,11 @@ GLFN(void, glEnd, void) {
 GLFN(void, glEndQuery, GLenum target) {
     (void)target;
     lock();
-    if (S.active_query) queries_ended++;
+    if (S.active_query) {
+        queries_ended++;
+        Query *q = queries[S.active_query];
+        if (q && q->nslots && npend[q->frame] < VIS_SLOTS) pend[q->frame][npend[q->frame]++] = (typeof(pend[0][0])){S.active_query, q->serial};
+    }
     S.active_query = 0;
     if (enc) { [enc setVisibilityResultMode:MTLVisibilityResultModeDisabled offset:0]; es.vis_mode = 0; }
     unlock();
@@ -2130,6 +2151,10 @@ GLFN(void, glGetProgramiv, GLuint p, GLenum pname, GLint *v) {
 }
 
 static uint64_t query_result(Query *q) {
+    if (q->saved) {
+        if (getenv("RT_METAL_DEBUG")) LOG_ONCE("occlusion query read %llu command buffers after it ran", (unsigned long long)(serial - q->serial));
+        return q->result;
+    }
     uint64_t sum = 0;
     uint64_t *vb = (uint64_t *)[vis[q->frame] contents];
     for (int k = 0; k < q->nslots; k++) sum += vb[q->slot[k]];
