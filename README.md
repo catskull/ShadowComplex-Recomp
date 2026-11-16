@@ -86,17 +86,8 @@ tools/vendor_deps.sh          # copy those libraries into deps/
 launcher/package.sh           # builds build/launcher/Shadow Complex Recomp.app and its .zip
 ```
 
-For a release that opens on other Macs without a Gatekeeper warning, sign it with a Developer ID certificate
-and notarize it (one-time setup: `xcrun notarytool store-credentials <profile>`):
-
-```sh
-SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=<profile> launcher/package.sh
-```
-
 The launcher also works from a terminal: `--build` builds (or rebuilds) and `--play` launches with the saved
 settings. The build it runs is `tools/launcher_build.sh`.
-
-Never commit or share `orig.bin`, `gen/`, `out/` or `build/`: they are made from the game's code.
 
 ## How it works
 
