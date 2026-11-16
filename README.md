@@ -103,6 +103,48 @@ following:
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) has the technical details and measurements.
 
+## Contributing
+
+Bug reports and code are both welcome. Please use the GitHub issue tracker and pull requests.
+
+### Reporting a problem
+
+Open an issue and include:
+
+- **Your Mac and macOS version** (Apple menu → About This Mac), e.g. "MacBook Pro M1, macOS 15.3"
+- **The launcher version**, shown under the title in the launcher window
+- **Your settings**: the launcher's settings, plus the resolution and anti-aliasing chosen in the game, and
+  which display you play on if you have more than one
+- **What happened and what you expected**, with steps to reproduce it if you can (where in the game, what you
+  were doing)
+- **A screenshot or short video** for graphical problems
+
+**For crashes, always attach the game log.** Click **Game Log** in the launcher (or open
+`~/Library/Logs/ShadowComplexRecomp/game.log`) and attach the whole file. It records the crash and the game's
+internal call stack at that moment, which is usually what pins the bug down. The log is overwritten every time
+you click **Play**, so save a copy before you start the game again.
+
+**For build failures,** attach `~/Library/Logs/ShadowComplexRecomp/build.log` (also shown under **Build log**
+in the launcher).
+
+Please don't attach the game's files or your save files.
+
+### Contributing code
+
+1. Read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for how the recompiler and runtime fit together, and how
+   to build by hand.
+2. Test with your own copy of the game. Run test builds with `RT_TEST_PROFILE=1` (or the launcher's **Test
+   profile** setting): it uses a separate save slot, so a test run can't overwrite your real save.
+3. Keep game-derived files out of commits. `.gitignore` already excludes them (`orig.bin`, `gen/`, `out/`,
+   `build/`).
+4. In the pull request, say what you changed, why, and how you tested it: which Mac, which part of the game,
+   and before/after screenshots or frame rates for rendering or performance changes.
+
+Crash backtraces in `game.log` list guest addresses. To name the functions, run
+`tools/symbolize.py orig.bin < game.log` (after `make orig.bin`).
+
+AI-assisted contributions are fine, as long as you've tested the change by playing the game.
+
 ## License
 
 MIT, see [LICENSE](LICENSE). Parts of the recompiler (`tools/recomp.py`, `tools/macho.py`) are adapted from
