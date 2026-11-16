@@ -1,0 +1,79 @@
+# Builds the launcher (launcher/package.sh) on Apple Silicon.
+#   push a tag like v1.2  ->  GitHub Release "v1.2" with "Shadow Complex Recomp.zip" attached
+#   run manually          ->  the zip as a workflow artifact (no release)
+# Signing and notarization are optional: add these repository secrets to enable them, otherwise the build is
+# ad-hoc signed (players then have to approve it in System Settings > Privacy & Security on first launch).
+#   MACOS_CERTIFICATE           base64 of a Developer ID Application .p12 (base64 -i cert.p12 | pbcopy)
+#   MACOS_CERTIFICATE_PASSWORD  the .p12's password
+#   SIGN_ID                     e.g. "Developer ID Application: Your Name (TEAMID)"
+#   NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD (app-specific password from account.apple.com)
+name: Release launcher
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      SIGN_ID: ${{ secrets.SIGN_ID }}
+      NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+      NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+      NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shader-conversion libraries
+        run: brew install glslang spirv-cross
+
+      - name: Vendor libraries
+        run: tools/vendor_deps.sh
+
+      - name: Import signing certificate
+        if: env.MACOS_CERTIFICATE != ''
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Package launcher
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then export RELEASE_VERSION="${GITHUB_REF_NAME#v}"; fi
+          launcher/package.sh
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ZIP="build/launcher/Shadow Complex Recomp.zip"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "Shadow Complex Recomp $GITHUB_REF_NAME" --generate-notes
+          fi
+
+      - name: Upload artifact
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shadow Complex Recomp
+          path: build/launcher/Shadow Complex Recomp.zip
+
+      - name: Remove signing keychain
+        if: always() && env.MACOS_CERTIFICATE != ''
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

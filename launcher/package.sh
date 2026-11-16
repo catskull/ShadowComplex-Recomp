@@ -3,6 +3,8 @@
 # and runtime sources (no game code or data) and recompiles the user's own Steam copy on their Mac.
 #   launcher/package.sh                       ad-hoc signed (fine on this Mac; others get a Gatekeeper warning)
 #   SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=<notarytool keychain profile> launcher/package.sh
+# Notarization can instead take NOTARY_APPLE_ID, NOTARY_TEAM_ID and NOTARY_PASSWORD (an app-specific password),
+# as in CI (.github/workflows/release.yml). RELEASE_VERSION (e.g. 1.2) sets the version shown in Finder.
 # Needs: Xcode or Command Line Tools; deps/ (tools/vendor_deps.sh, run here if missing; needs Homebrew's
 # glslang and spirv-cross).
 set -e
@@ -34,7 +36,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>ShadowComplexRecomp</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0 ($VERSION)</string>
+    <key>CFBundleShortVersionString</key><string>${RELEASE_VERSION:-1.0} ($VERSION)</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
@@ -44,7 +46,7 @@ EOF
 
 if [ -n "$SIGN_ID" ]; then
     # every Mach-O inside the bundle must carry the Developer ID signature for notarization
-    find "$APP/Contents/Resources" -name "*.dylib" -exec codesign -f --timestamp --options runtime -s "$SIGN_ID" {} \;
+    find "$APP/Contents/Resources" -name "*.dylib" -type f -exec codesign -f --timestamp --options runtime -s "$SIGN_ID" {} \;
     codesign -f --timestamp --options runtime -s "$SIGN_ID" "$APP"
 else
     codesign -f -s - "$APP"
@@ -53,8 +55,13 @@ codesign --verify --strict "$APP"
 
 ZIP="$OUT/$NAME.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
-if [ -n "$NOTARY_PROFILE" ]; then
-    xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+if [ -n "$NOTARY_PROFILE" ] || [ -n "$NOTARY_APPLE_ID" ]; then
+    if [ -n "$NOTARY_PROFILE" ]; then
+        xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+    else
+        xcrun notarytool submit "$ZIP" --apple-id "$NOTARY_APPLE_ID" --team-id "$NOTARY_TEAM_ID" \
+            --password "$NOTARY_PASSWORD" --wait
+    fi
     xcrun stapler staple "$APP"
     rm "$ZIP" && ditto -c -k --keepParent "$APP" "$ZIP"
 fi

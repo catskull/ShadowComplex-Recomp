@@ -89,7 +89,7 @@ app: $(EXE)
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources" "$(APP)/Contents/Frameworks"
 	cp "$(EXE)" "$(APP)/Contents/MacOS/ShadowComplexRemastered"
-	cp $(DEPS)/lib/*.16.dylib $(DEPS)/lib/libSPIRV-Tools*.dylib "$(APP)/Contents/Frameworks/"
+	find $(DEPS)/lib -name "*.dylib" -type f -exec cp {} "$(APP)/Contents/Frameworks/" \;
 	cp "$(GAME_APP)/MacOS/steam_appid.txt" "$(APP)/Contents/MacOS/"
 	cp "$(GAME_APP)/Info.plist" "$(APP)/Contents/Info.plist"
 	plutil -replace LSMinimumSystemVersion -string 11.0 "$(APP)/Contents/Info.plist"

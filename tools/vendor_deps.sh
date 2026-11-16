@@ -10,10 +10,16 @@ rm -rf deps
 mkdir -p deps/include deps/lib deps/licenses
 cp -RL "$BREW/include/glslang" "$BREW/include/spirv_cross" deps/include/
 
-for f in libglslang.16 libglslang-default-resource-limits.16; do cp -L "$BREW/opt/glslang/lib/$f.dylib" deps/lib/; done
-for f in libSPIRV-Tools-opt libSPIRV-Tools; do cp -L "$BREW/opt/spirv-tools/lib/$f.dylib" deps/lib/; done
+# each library is copied under its install name (e.g. libglslang.16.dylib), whatever version Homebrew has
+for f in glslang/lib/libglslang glslang/lib/libglslang-default-resource-limits spirv-tools/lib/libSPIRV-Tools-opt \
+         spirv-tools/lib/libSPIRV-Tools; do
+    src="$BREW/opt/$f.dylib"
+    real=$(basename "$(otool -D "$src" | tail -1)")
+    cp -L "$src" "deps/lib/$real"
+    [ "$real" = "$(basename "$src")" ] || ln -s "$real" "deps/lib/$(basename "$src")"
+done
 chmod u+w deps/lib/*.dylib
-for d in deps/lib/*.dylib; do
+for d in $(find deps/lib -name "*.dylib" -type f); do
     n=$(basename "$d")
     install_name_tool -id "@rpath/$n" "$d" 2>/dev/null
     for dep in $(otool -L "$d" | awk 'NR > 1 {print $1}' | grep -E "glslang|SPIRV"); do
@@ -21,8 +27,6 @@ for d in deps/lib/*.dylib; do
     done
     codesign -f -s - "$d" 2>/dev/null
 done
-ln -s libglslang.16.dylib deps/lib/libglslang.dylib
-ln -s libglslang-default-resource-limits.16.dylib deps/lib/libglslang-default-resource-limits.dylib
 
 for f in c msl hlsl cpp reflect glsl core; do cp -L "$BREW/opt/spirv-cross/lib/libspirv-cross-$f.a" deps/lib/; done
 

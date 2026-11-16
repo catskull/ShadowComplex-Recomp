@@ -86,6 +86,9 @@ tools/vendor_deps.sh          # copy those libraries into deps/
 launcher/package.sh           # builds build/launcher/Shadow Complex Recomp.app and its .zip
 ```
 
+Releases are built by GitHub Actions (`.github/workflows/release.yml`): pushing a tag like `v1.0` builds the
+launcher and attaches the zip to a GitHub Release.
+
 The launcher also works from a terminal: `--build` builds (or rebuilds) and `--play` launches with the saved
 settings. The build it runs is `tools/launcher_build.sh`.
 
