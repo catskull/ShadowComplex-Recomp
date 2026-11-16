@@ -1,5 +1,9 @@
 # Shadow Complex Recomp
 
+> **Note:** this project was heavily vibe coded: most of the code was written with an AI coding assistant.
+> It has been tested by hand, by playing the game on real hardware, but it has no automated test suite.
+> Expect rough edges, and please report what you find.
+
 Play **Shadow Complex Remastered** natively on Apple Silicon Macs.
 
 The Mac version of the game on Steam is an Intel-only (x86_64) app, so on Apple Silicon it needs Rosetta 2
