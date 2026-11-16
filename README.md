@@ -1,7 +1,7 @@
 # Shadow Complex Recomp
 
 > **Note:** this project was heavily vibe coded: most of the code was written with an AI coding assistant.
-> It has been tested by hand, by playing the game on real hardware, but it has no automated test suite.
+> It has been tested by hand, by playing the game on real hardware.
 > Expect rough edges, and please report what you find.
 
 Play **Shadow Complex Remastered** natively on Apple Silicon Macs.
