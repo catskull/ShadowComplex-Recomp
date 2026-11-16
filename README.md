@@ -4,7 +4,7 @@
 > It has been tested by hand, by playing the game on an M3 Max and an M1 Mac, and runs smoothly on both.
 > Expect rough edges, and please report what you find.
 
-Play **Shadow Complex Remastered** natively on Apple Silicon Macs.
+Play **[Shadow Complex Remastered](https://store.steampowered.com/app/385560/Shadow_Complex_Remastered/)** natively on Apple Silicon Macs.
 
 The Mac version of the game on Steam is an Intel-only (x86_64) app, so on Apple Silicon it needs Rosetta 2
 and Apple's deprecated OpenGL. This project statically recompiles the game's own code into native arm64 code
@@ -17,13 +17,13 @@ on your Mac, and replaces its OpenGL renderer with one written for Metal. You ge
 - an option to fill 16:10, 4:3 and 5:4 screens instead of letterboxing
 - a choice of display when you have more than one
 
-**No game files are included.** You need your own copy of Shadow Complex Remastered from Steam. The launcher
+**No game files are included.** You need your own copy of [Shadow Complex Remastered from Steam](https://store.steampowered.com/app/385560/Shadow_Complex_Remastered/). The launcher
 recompiles that copy on your Mac.
 
 ## Requirements
 
 - A Mac with Apple Silicon (M1 or later), macOS 13 Ventura or later
-- Shadow Complex Remastered installed with Steam (the current Mac version)
+- [Shadow Complex Remastered](https://store.steampowered.com/app/385560/Shadow_Complex_Remastered/) installed with Steam (the current Mac version)
 - Apple's Command Line Tools (free; the launcher offers to install them). Full Xcode is not needed.
 - About 2 GB of free disk space for the build
 
