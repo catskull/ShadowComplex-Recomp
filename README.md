@@ -108,6 +108,13 @@ following:
 
 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) has the technical details and measurements.
 
+## License
+
+MIT, see [LICENSE](LICENSE). Parts of the recompiler (`tools/recomp.py`, `tools/macho.py`) are adapted from
+JPTG-Recomp and keep its MIT notice (`licenses/JPTG-Recomp-LICENSE.txt`); bundled third-party libraries keep
+their own licences. The license covers this project's code only, not Shadow Complex Remastered or any of its
+assets.
+
 ## Legal
 
 This is an unofficial fan project. It is not affiliated with or endorsed by Chair Entertainment, Epic Games,

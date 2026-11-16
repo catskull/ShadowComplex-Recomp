@@ -20,9 +20,9 @@ swiftc -O -parse-as-library -swift-version 5 -target arm64-apple-macos13.0 launc
     -o "$APP/Contents/MacOS/ShadowComplexRecomp"
 
 SRC="$APP/Contents/Resources/src"
-cp -R Makefile README.md runtime third_party deps licenses "$SRC/"
+cp -R Makefile README.md LICENSE runtime third_party deps licenses "$SRC/"
 cp tools/*.py tools/*.sh tools/orig.sha256 tools/requirements.txt "$SRC/tools/"
-VERSION=$(cd "$SRC" && find . -type f ! -name VERSION ! -name README.md | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-10)
+VERSION=$(cd "$SRC" && find . -type f ! -name VERSION ! -name README.md ! -name LICENSE | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-10)
 echo "$VERSION" > "$SRC/VERSION"
 
 cat > "$APP/Contents/Info.plist" <<EOF
