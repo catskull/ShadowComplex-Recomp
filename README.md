@@ -48,6 +48,7 @@ minute or so. Later launches are smooth.
 | Renderer | **Metal** (recommended) or the game's original **OpenGL** renderer |
 | Display | Which screen the game runs on |
 | Upscaling | How a lower render resolution is scaled to the screen: **MetalFX** (sharper) or **Bilinear** |
+| Skip the intro logos | Goes straight to the title screen (passes `-nomovie` to the game) |
 | Fill screens narrower than 16:9 | On 16:10, 4:3 or 5:4 screens, shows more of the scene above and below instead of black bars |
 | Turn off vertical sync | Uncapped frame rate (may tear) |
 | Test profile | Uses a separate save slot, leaving your real saves untouched |

@@ -37,6 +37,7 @@ final class Model: ObservableObject {
     @AppStorage("upscaler") var upscaler = "metalfx"
     @AppStorage("noVsync") var noVsync = false
     @AppStorage("testProfile") var testProfile = false
+    @AppStorage("skipIntro") var skipIntro = false
     @AppStorage("extraEnv") var extraEnv = ""
 
     var version: String { (try? String(contentsOf: bundledSrc.appendingPathComponent("VERSION"), encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "dev" }
@@ -222,6 +223,8 @@ final class Model: ObservableObject {
         p.executableURL = builtExe
         p.currentDirectoryURL = builtExe.deletingLastPathComponent()
         p.environment = environment()
+        // -nomovie: the engine uses its no-movie player, so the startup logo sequence is skipped
+        p.arguments = skipIntro ? ["-nomovie"] : []
         if let h = try? FileHandle(forWritingTo: gameLog) { p.standardOutput = h; p.standardError = h }
         p.terminationHandler = { proc in
             Task { @MainActor in
@@ -333,6 +336,7 @@ struct ContentView: View {
                 Text("MetalFX").tag("metalfx")
                 Text("Bilinear").tag("bilinear")
             }.disabled(m.renderer != "metal")
+            Toggle("Skip the intro logos", isOn: $m.skipIntro)
             Toggle("Fill screens narrower than 16:9 (no letterbox)", isOn: $m.fillScreen)
             Toggle("Turn off vertical sync", isOn: $m.noVsync)
             Toggle("Test profile (separate saves)", isOn: $m.testProfile)
