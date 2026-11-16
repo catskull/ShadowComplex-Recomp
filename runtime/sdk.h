@@ -1,0 +1,34 @@
+// SDK headers for host thunks and runtime shims (compiled as Objective-C)
+#pragma once
+#define GL_SILENCE_DEPRECATION 1
+#import <Cocoa/Cocoa.h>
+#import <OpenGL/OpenGL.h>
+#import <OpenGL/gl.h>
+#import <OpenGL/glext.h>
+#import <AudioToolbox/AudioToolbox.h>
+#import <AudioUnit/AudioUnit.h>
+#import <CoreAudio/CoreAudio.h>
+#import <IOKit/hid/IOHIDLib.h>
+#import <IOKit/IOKitLib.h>
+#import <ForceFeedback/ForceFeedback.h>
+#import <Security/Security.h>
+#import <CoreServices/CoreServices.h>
+#import <GameKit/GameKit.h>
+#include <zlib.h>
+#include <wchar.h>
+#include <wctype.h>
+#include <xlocale.h>
+#include <libkern/OSAtomic.h>
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <malloc/malloc.h>
+#include <pthread.h>
+#include <sys/sysctl.h>
+#include <sys/stat.h>
+#include <sys/mount.h>
+#include <dirent.h>
+#include <execinfo.h>
+#include <dlfcn.h>
+#include <unwind.h>
+#include <ifaddrs.h>
+#include <sys/ioctl.h>

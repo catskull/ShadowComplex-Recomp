@@ -1,0 +1,11 @@
+# generated from the game (never share these: they are derived from its code)
+orig.bin
+gen/
+out/
+build/
+# local tools and vendored binaries (tools/vendor_deps.sh)
+.venv/
+venv/
+deps/
+__pycache__/
+.DS_Store
