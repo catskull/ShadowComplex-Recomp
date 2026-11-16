@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds the shareable launcher: build/launcher/Shadow Complex Recomp.app (+ .zip). It carries the recompiler
+# Builds the shareable launcher: build/launcher/Shadow Complex Recomp.app (+ ShadowComplexRecomp.zip). It carries the recompiler
 # and runtime sources (no game code or data) and recompiles the user's own Steam copy on their Mac.
 #   launcher/package.sh                       ad-hoc signed (fine on this Mac; others get a Gatekeeper warning)
 #   SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=<notarytool keychain profile> launcher/package.sh
@@ -53,7 +53,7 @@ else
 fi
 codesign --verify --strict "$APP"
 
-ZIP="$OUT/$NAME.zip"
+ZIP="$OUT/ShadowComplexRecomp.zip"   # no spaces: GitHub turns them into dots in release asset names
 ditto -c -k --keepParent "$APP" "$ZIP"
 if [ -n "$NOTARY_PROFILE" ] || [ -n "$NOTARY_APPLE_ID" ]; then
     if [ -n "$NOTARY_PROFILE" ]; then

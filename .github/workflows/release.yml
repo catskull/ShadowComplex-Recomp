@@ -1,5 +1,5 @@
 # Builds the launcher (launcher/package.sh) on Apple Silicon.
-#   push a tag like v1.2  ->  GitHub Release "v1.2" with "Shadow Complex Recomp.zip" attached
+#   push a tag like v1.2  ->  GitHub Release "v1.2" with "ShadowComplexRecomp.zip" attached
 #   run manually          ->  the zip as a workflow artifact (no release)
 # Signing and notarization are optional: add these repository secrets to enable them, otherwise the build is
 # ad-hoc signed (players then have to approve it in System Settings > Privacy & Security on first launch).
@@ -60,7 +60,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ZIP="build/launcher/Shadow Complex Recomp.zip"
+          ZIP="build/launcher/ShadowComplexRecomp.zip"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber
           else
@@ -72,7 +72,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Shadow Complex Recomp
-          path: build/launcher/Shadow Complex Recomp.zip
+          path: build/launcher/ShadowComplexRecomp.zip
 
       - name: Remove signing keychain
         if: always() && env.MACOS_CERTIFICATE != ''

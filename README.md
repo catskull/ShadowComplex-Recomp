@@ -29,7 +29,8 @@ recompiles that copy on your Mac.
 
 ## Getting started
 
-1. Download **Shadow Complex Recomp.zip** from the Releases page, unzip it, and move
+1. Download **ShadowComplexRecomp.zip** from the
+   [latest release](https://github.com/catskull/ShadowComplex-Recomp/releases/latest), unzip it, and move
    **Shadow Complex Recomp.app** to your Applications folder.
 2. Open it. It finds the game in your Steam library (or click **Choose…** to point it at
    `Shadow Complex Remastered.app`) and checks that it is the supported version.
