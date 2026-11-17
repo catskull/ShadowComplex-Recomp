@@ -151,6 +151,9 @@ own every GL call). Apple's GL stays available as a fallback.
    frame's results (`UpdatePrimitiveOcclusion`), and one command buffer per frame serialised CPU and GPU. First
    level, display sync off: 113-120 fps (the engine's cap) at 36-69% GPU busy, against GL's ~118 fps at 77-84%.
    Debugging: `RT_METAL_SNAP=<frame,...>` with `RT_METAL_SNAP_DIR` saves presented frames as raw BGRA.
+   `RT_METAL_CHECK=1` logs indexed draws that read past their vertex data or range end, or have non-finite or huge
+   positions (with the attributes and vertex shader). It found the stretched fractured-wall chunks: the game binds a
+   shared 4-byte default vertex colour with stride 0 (D3D's one-value-for-all-vertices idiom); Metal read past it.
    Texture-unit LOD bias (glTexEnvf GL_TEXTURE_LOD_BIAS, used by many scene materials with values -1..5) is
    emulated: fragment shaders get `vec4 SC_LodBias[4]` at the end of their uniform block and implicit-LOD
    lookups (texture2D, textureCube, texture2DProj) pass it as the bias argument; the renderer fills it per
