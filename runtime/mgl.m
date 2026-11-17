@@ -14,6 +14,7 @@
 #define GL_SILENCE_DEPRECATION 1
 #import <OpenGL/gl3.h>
 #import <OpenGL/gl3ext.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -1504,8 +1505,12 @@ static int prepare_draw(int vtx_first, int vtx_end, int instanced) {
         k.vstep[l] = a->divisor ? MTLVertexStepFunctionPerInstance : MTLVertexStepFunctionPerVertex;
         k.vdiv[l] = a->divisor;
         Buf *b = a->buffer && a->buffer < NAMES ? bufs[a->buffer] : NULL;
-        if (b && b->mb) { vb[l] = b->mb; voff[l] = a->ptr; b->used = serial; }
-        else if (!a->buffer && a->ptr) {          // client-side array: copy the vertices the draw reads
+        if (b && b->mb) {
+            vb[l] = b->mb; voff[l] = a->ptr; b->used = serial;
+            // stride 0 over a buffer holding a single element is the D3D idiom for one value for every vertex
+            // (the game's shared default vertex colour); read as packed, Metal fetches garbage past the end
+            if (!a->stride && b->size < a->ptr + 2 * (size_t)stride) { k.vstep[l] = MTLVertexStepFunctionConstant; k.vstride[l] = 0; k.vdiv[l] = 0; }
+        } else if (!a->buffer && a->ptr) {          // client-side array: copy the vertices the draw reads
             int n = a->divisor ? (instanced ? instanced : 1) : vtx_end;
             size_t bytes = (size_t)n * stride + 16;
             id<MTLBuffer> rb;
@@ -1938,8 +1943,78 @@ GLFN(void, glEnable, GLenum cap) { lock(); set_cap(cap, 1); unlock(); }
 GLFN(void, glDisableVertexAttribArray, GLuint i) { lock(); if (i < 16) S.attr[i].enabled = 0; unlock(); }
 GLFN(void, glEnableVertexAttribArray, GLuint i) { lock(); if (i < 16) S.attr[i].enabled = 1; unlock(); }
 
+// RT_METAL_CHECK=1: log indexed draws that index past the vertex data bound to them or past their range
+// end, or whose position attribute is not finite or is huge (Metal reads garbage where GL may not)
+static void check_draw(GLsizei count, GLenum type, const void *indices, GLuint end, int instances) {
+    static int on = -1, reports;
+    if (on < 0) on = getenv("RT_METAL_CHECK") != 0;
+    if (!on || reports >= 300) return;
+    Prog *p = S.prog && S.prog < NAMES ? progs[S.prog] : NULL;
+    if (!p) return;
+    size_t isz = type == GL_UNSIGNED_INT ? 4 : 2;
+    Buf *eb = S.elem_buf && S.elem_buf < NAMES ? bufs[S.elem_buf] : NULL;
+    const uint8_t *ip = indices;
+    char why[256] = "";
+    if (eb && eb->mb) {
+        if ((size_t)indices + count * isz > eb->size) snprintf(why, sizeof why, "indices past the index buffer (%zu bytes)", eb->size);
+        ip = (const uint8_t *)[eb->mb contents] + (size_t)indices;
+    }
+    uint32_t mn = ~0u, mx = 0;
+    if (!why[0])
+        for (GLsizei i = 0; i < count; i++) {
+            uint32_t v = isz == 4 ? ((const uint32_t *)ip)[i] : ((const uint16_t *)ip)[i];
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        }
+    if (!why[0] && end != 0xffff && mx > end) snprintf(why, sizeof why, "index %u past range end %u", mx, end);
+    int pos = -1;
+    for (int k = 0; k < p->nattrs; k++) if (strstr(p->attrs[k].name, "Position")) pos = p->attrs[k].location;
+    for (int l = 0; l < 16 && !why[0]; l++) {
+        Attrib *a = &S.attr[l];
+        if (!(p->attr_used & (1u << l)) || !a->enabled) continue;
+        int stride = a->stride ? a->stride : vsize(a);
+        uint32_t need = a->divisor ? (uint32_t)((instances > 1 ? instances : 1) - 1) / a->divisor : mx;
+        Buf *b = a->buffer && a->buffer < NAMES ? bufs[a->buffer] : NULL;
+        const uint8_t *base = NULL;
+        if (b && b->mb && !a->stride && b->size < a->ptr + 2 * (size_t)stride) continue;   // constant (prepare_draw)
+        if (b && b->mb) {
+            size_t avail = b->size > a->ptr ? b->size - a->ptr : 0;
+            uint32_t nv = avail >= (size_t)vsize(a) ? (uint32_t)((avail - vsize(a)) / stride + 1) : 0;
+            if (need >= nv) { snprintf(why, sizeof why, "attribute %d reads vertex %u of %u", l, need, nv); break; }
+            base = (const uint8_t *)[b->mb contents] + a->ptr;
+        } else if (!a->buffer && a->ptr) base = (const uint8_t *)a->ptr;
+        if (l == pos && base && a->type == GL_FLOAT && !a->divisor)
+            for (GLsizei i = 0; i < count && !why[0]; i++) {
+                uint32_t v = isz == 4 ? ((const uint32_t *)ip)[i] : ((const uint16_t *)ip)[i];
+                const float *f = (const float *)(base + (size_t)v * stride);
+                for (int c = 0; c < a->size && c < 4; c++)
+                    if (!isfinite(f[c]) || fabsf(f[c]) > 1e7f) {
+                        snprintf(why, sizeof why, "vertex %u position[%d] = %g", v, c, f[c]);
+                        break;
+                    }
+            }
+    }
+    if (!why[0]) return;
+    reports++;
+    MGL_LOG("check: %s; program %016llx, %d indices (%u..%u) end %u, %d instances, element buffer %u\n", why,
+            (unsigned long long)p->hash, count, mn, mx, end, instances, S.elem_buf);
+    for (int l = 0; l < 16; l++) {
+        Attrib *a = &S.attr[l];
+        if (!(p->attr_used & (1u << l)) || !a->enabled) continue;
+        Buf *b = a->buffer && a->buffer < NAMES ? bufs[a->buffer] : NULL;
+        MGL_LOG("check:   attribute %d type 0x%x size %d stride %d divisor %d buffer %u (%zu bytes) offset %llu%s\n", l, a->type,
+                a->size, a->stride, a->divisor, a->buffer, b ? b->size : 0, (unsigned long long)a->ptr, l == pos ? " position" : "");
+    }
+    static uint64_t dumped[64];
+    static int ndumped;
+    for (int k = 0; k < ndumped; k++) if (dumped[k] == p->hash) return;
+    if (ndumped < 64) dumped[ndumped++] = p->hash;
+    MGL_LOG("check: vertex shader %016llx:\n%s\n", (unsigned long long)p->hash, p->src[0]);
+}
+
 static void draw_indexed(GLenum mode, GLsizei count, GLenum type, const void *indices, GLuint end, int instances) {
     int ok;
+    check_draw(count, type, indices, end, instances);
     MTLPrimitiveType pt = prim(mode, &ok);
     if (!ok || count <= 0) return;
     if (!prepare_draw(0, end + 1, instances)) return;
