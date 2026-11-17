@@ -367,6 +367,30 @@ static char *fix_shader(const char *src) {
     return out;
 }
 
+// D3D9 hardware returns 0 for 0 * inf; Apple GPUs follow IEEE and return NaN. Materials switch an effect
+// off by leaving a parameter at 0 and the shader still divides by it: the water's refraction does
+// strength * x * (1 / fade distance) with both 0, the NaN then encodes as a maximum screen offset and
+// drags a black band across the water. Rewrite every "( 1.0 / <constant component> )" as a reciprocal
+// that gives a huge finite value for 0, so the product is 0 again. Returns a malloc'd string.
+static char *fix_rcp(const char *src) {
+    static const char key[] = "( 1.0 / ";
+    size_t n = strlen(src), extra = 0;
+    for (const char *q = src; (q = strstr(q, key)); q += sizeof key - 1) extra += 64;
+    char *out = malloc(n + extra + 1), *o = out;
+    const char *q = src;
+    for (const char *hit; (hit = strstr(q, key)); ) {
+        const char *x = hit + sizeof key - 1, *e = x;
+        while (*e && *e != ' ' && *e != ')') e++;
+        int len = (int)(e - x);
+        int ok = (!strncmp(x, "PConst", 6) || !strncmp(x, "VConst", 6)) && len > 2 && len < 24 && x[len - 2] == '.' && *e == ' ';
+        memcpy(o, q, x - q); o += x - q;
+        if (ok) o += sprintf(o, "(%.*s == 0.0 ? 1e-30 : %.*s)", len, x, len, x);
+        q = ok ? e : x;
+    }
+    strcpy(o, q);
+    return out;
+}
+
 // D3D guarantees that identical vertex maths gives bit-identical positions in every shader; GLSL
 // only does for outputs declared invariant. UE3 draws each light as another pass over the scene
 // with an exact depth test against the base pass, and Apple's compiler rounds the two shaders'
@@ -409,7 +433,10 @@ void I__glShaderSource(CPU *c) {
         memcpy(p, str[k], n); p += n;
     }
     *p = 0;
-    if (!getenv("RT_NO_SHADERFIX")) { char *fixed = fix_shader(src); free(src); src = fixed; }
+    if (!getenv("RT_NO_SHADERFIX")) {
+        char *fixed = fix_shader(src); free(src); src = fixed;
+        fixed = fix_rcp(src); free(src); src = fixed;
+    }
     if (!getenv("RT_NO_INVARIANT")) src = invariant_position(src);
     if (tracing() && (getenv("RT_GLTRACE_ALL") || strstr(src, "hadow"))) {
         static int n;

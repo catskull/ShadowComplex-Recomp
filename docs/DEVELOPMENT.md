@@ -124,6 +124,9 @@ the only untranslated bytes left are 14 undecodable ones in dead code.
   rounds the passes differently, so light passes skipped pixels. `runtime/gltrace.m` now inserts
   `invariant gl_Position;` into every vertex shader (`RT_NO_INVARIANT=1` disables). It also rewrites
   `inversesqrt(x)` as `inversesqrt(abs(x))` to match D3D9 `rsq` (`RT_NO_SHADERFIX=1` disables).
+  And `( 1.0 / <constant>.c )` becomes a reciprocal that is huge but finite for 0, since D3D9 gives 0 for
+  0 * inf and Apple GPUs give NaN: materials that disable an effect with zero parameters (the water's
+  refraction strength and fade distance) otherwise produce NaN offsets, a black band along the water.
   Capture tooling used to find it: `RT_SHADOWDUMP=1`, then `touch ~/sc-dump` while playing, saves the shadow maps,
   every blit-resolved buffer and a per-draw crop of one frame to `~/sc-shadow` (`RT_DUMPRECT`, `RT_DUMPPROG=<id>`
   save more); `RT_FULL_SCENE=1` allocates RGBA16F targets as RGBA32F (did not matter).
@@ -154,6 +157,11 @@ own every GL call). Apple's GL stays available as a fallback.
    `RT_METAL_CHECK=1` logs indexed draws that read past their vertex data or range end, or have non-finite or huge
    positions (with the attributes and vertex shader). It found the stretched fractured-wall chunks: the game binds a
    shared 4-byte default vertex colour with stride 0 (D3D's one-value-for-all-vertices idiom); Metal read past it.
+   Live capture: `touch ~/sc-dump` saves the next frame to `~/sc-capture` (draws.txt with each draw's shaders,
+   state and constants, the drawn GLSL sources, sampled float/screen-size textures and the final frame as raw files
+   headed "W H pixelformat"). `~/sc-skip` lists GLSL source hashes (capture file names) whose draws are skipped,
+   re-read every second, to bisect an artifact from another terminal while the game keeps focus.
+   `RT_METAL_SHADERDUMP=<dir>` saves every GLSL source the game sends.
    Texture-unit LOD bias (glTexEnvf GL_TEXTURE_LOD_BIAS, used by many scene materials with values -1..5) is
    emulated: fragment shaders get `vec4 SC_LodBias[4]` at the end of their uniform block and implicit-LOD
    lookups (texture2D, textureCube, texture2DProj) pass it as the bias argument; the renderer fills it per

@@ -99,6 +99,7 @@ typedef struct {
     int bias_off;                       // fragment block offset of the per-sampler LOD bias (-1: none)
     dispatch_group_t warm;              // background pipeline warm-up
     GLuint name;
+    uint64_t src_hash[2];               // fnv64 of each GLSL source (capture/shader dump file names)
     uint64_t hash;                      // of both stages: identifies the program across launches
     id<MTLFunction> fn[2];
     uint32_t gen;
@@ -1470,11 +1471,142 @@ static id<MTLTexture> unit_texture(int unit, int cube, id<MTLSamplerState> *smp)
     return t->mt;
 }
 
+// ---------- frame capture ----------
+// `touch ~/sc-dump` while playing: the next frame's draws are logged to ~/sc-capture/draws.txt (shaders, state,
+// the PConstGlobal/VConstGlobal constants, sampled textures), with each drawn program's GLSL source, every
+// float texture sampled, and the final frame (raw files headed "W H pixelformat\n")
+static int cap_on, cap_draw, cap_ntex;
+static FILE *cap_f;
+static char cap_dir[512];
+static id<MTLTexture> cap_tex[16];
+static uint64_t cap_src[512];
+static int cap_nsrc;
+static int cap_float_pf(MTLPixelFormat f) {
+    return f == MTLPixelFormatRGBA16Float || f == MTLPixelFormatRG16Float || f == MTLPixelFormatR32Float ||
+           f == MTLPixelFormatRGBA32Float || f == MTLPixelFormatR16Float || f == MTLPixelFormatDepth32Float;
+}
+static int cap_tex_id(id<MTLTexture> t) {
+    for (int k = 0; k < cap_ntex; k++) if (cap_tex[k] == t) return k;
+    int screen = cur_t.color[0] && t && t.width == cur_t.color[0].width && t.height == cur_t.color[0].height;
+    if (cap_ntex == 16 || !t || !(cap_float_pf(t.pixelFormat) || screen) || t.textureType != MTLTextureType2D) return -1;
+    cap_tex[cap_ntex] = [t retain];
+    return cap_ntex++;
+}
+static void capture_draw(Prog *p) {
+    fprintf(cap_f, "draw %d vs %016llx fs %016llx target %p %dx%d pf %d blend %d (%x %x) depth test %d write %d func %x stencil %d "
+            "cull %x mask %x\n", cap_draw++, (unsigned long long)p->src_hash[0], (unsigned long long)p->src_hash[1],
+            (void *)cur_t.color[0], cur_t.color[0] ? (int)cur_t.color[0].width : 0, cur_t.color[0] ? (int)cur_t.color[0].height : 0,
+            cur_t.color[0] ? (int)cur_t.color[0].pixelFormat : 0, S.blend, S.bsrc_rgb, S.bdst_rgb, S.depth_test, S.depth_mask,
+            S.depth_func, S.stencil_test, S.cull ? S.cull_face : 0, S.color_mask);
+    for (int k = 0; k < p->nu; k++) {
+        MglUniform *u = &p->u[k];
+        int cf = !strcmp(u->name, "PConstFloat");
+        if (u->offset < 0 || (strcmp(u->name, "PConstGlobal") && strcmp(u->name, "VConstGlobal") && !cf)) continue;
+        for (int e = 0; e < (cf && u->count > 8 ? 8 : u->count); e++) {
+            const float *v = (const float *)(p->block[u->stage] + u->offset + e * u->stride);
+            fprintf(cap_f, "  %s[%d] = %g %g %g %g\n", u->name, e, v[0], v[1], v[2], v[3]);
+        }
+    }
+    for (int sm = 0; sm < p->nsamp[1]; sm++) {
+        id<MTLSamplerState> smp;
+        id<MTLTexture> t = unit_texture(p->unit[1][sm] & 15, p->skind[1][sm] == MGL_SAMPLERCUBE, &smp);
+        fprintf(cap_f, "  PSampler%d: %p %dx%d pf %d%s", sm, (void *)t, t ? (int)t.width : 0, t ? (int)t.height : 0,
+                t ? (int)t.pixelFormat : 0, t == cur_t.color[0] ? " (the target)" : "");
+        int id = cap_tex_id(t);
+        if (id >= 0) fprintf(cap_f, " saved as tex%d.raw", id);
+        fprintf(cap_f, "\n");
+    }
+    for (int st = 0; st < 2; st++) {
+        int seen = 0;
+        for (int k = 0; k < cap_nsrc; k++) if (cap_src[k] == p->src_hash[st]) seen = 1;
+        if (seen || cap_nsrc == 512) continue;
+        cap_src[cap_nsrc++] = p->src_hash[st];
+        char path[700];
+        snprintf(path, sizeof path, "%s/%016llx.%s", cap_dir, (unsigned long long)p->src_hash[st], st ? "frag" : "vert");
+        FILE *f = fopen(path, "w");
+        if (f) { fputs(p->src[st], f); fclose(f); }
+    }
+}
+static void cap_save(id<MTLTexture> t, const char *name) {
+    size_t bpp = t.pixelFormat == MTLPixelFormatRGBA32Float ? 16 : t.pixelFormat == MTLPixelFormatRGBA16Float ? 8 :
+                 t.pixelFormat == MTLPixelFormatR16Float ? 2 : 4;
+    size_t row = t.width * bpp;
+    id<MTLBuffer> tmp = [dev newBufferWithLength:row * t.height options:MTLResourceStorageModeShared];
+    id<MTLCommandBuffer> c = [queue commandBuffer];
+    id<MTLBlitCommandEncoder> b = [c blitCommandEncoder];
+    [b copyFromTexture:t sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(t.width, t.height, 1)
+              toBuffer:tmp destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row * t.height];
+    [b endEncoding];
+    [c commit];
+    [c waitUntilCompleted];
+    char path[700];
+    snprintf(path, sizeof path, "%s/%s", cap_dir, name);
+    FILE *f = fopen(path, "wb");
+    if (f) { fprintf(f, "%d %d %d\n", (int)t.width, (int)t.height, (int)t.pixelFormat); fwrite([tmp contents], 1, row * t.height, f); fclose(f); }
+    [tmp release];
+}
+// called at present, between frames, with no pass open
+static void capture_frame(void) {
+    if (cap_on) {
+        cap_on = 0;
+        fclose(cap_f);
+        id<MTLCommandBuffer> c = cmd;           // the frame's GPU work must finish before its targets are read
+        cmd = nil;
+        [c commit];
+        [c waitUntilCompleted];
+        [c release];
+        serial++;
+        frame_index = (frame_index + 1) % NBUF;
+        queries_ended = 0;
+        for (int k = 0; k < cap_ntex; k++) {
+            char name[32];
+            snprintf(name, sizeof name, "tex%d.raw", k);
+            cap_save(cap_tex[k], name);
+            [cap_tex[k] release];
+        }
+        if (back_color) cap_save(back_color, "frame.raw");
+        MGL_LOG("capture: %d draws saved to %s\n", cap_draw, cap_dir);
+        begin_frame();
+        return;
+    }
+    char trigger[512];
+    snprintf(trigger, sizeof trigger, "%s/sc-dump", getenv("HOME"));
+    if (access(trigger, F_OK)) return;
+    unlink(trigger);
+    snprintf(cap_dir, sizeof cap_dir, "%s/sc-capture", getenv("HOME"));
+    mkdir(cap_dir, 0755);
+    char path[600];
+    snprintf(path, sizeof path, "%s/draws.txt", cap_dir);
+    cap_f = fopen(path, "w");
+    if (cap_f) { cap_on = 1; cap_draw = 0; cap_ntex = 0; cap_nsrc = 0; }
+}
+
+// ~/sc-skip: GLSL source hashes (as in the capture's file names), one per line; draws using them are skipped.
+// Re-read about once a second, to find which draw makes a visible artifact.
+static uint64_t skip_hash[64];
+static int nskip;
+static void skip_reload(void) {
+    static long frames;
+    if (frames++ % 60) return;
+    char path[512];
+    snprintf(path, sizeof path, "%s/sc-skip", getenv("HOME"));
+    FILE *f = fopen(path, "r");
+    int n = 0;
+    if (f) {
+        unsigned long long h;
+        while (n < 64 && fscanf(f, "%llx", &h) == 1) skip_hash[n++] = h;
+        fclose(f);
+    }
+    if (n != nskip) MGL_LOG("skipping draws of %d shaders\n", n);
+    nskip = n;
+}
+
 // common draw path; returns 0 when the draw must be skipped
 static int prepare_draw(int vtx_first, int vtx_end, int instanced) {
     Prog *p = S.prog && S.prog < NAMES ? progs[S.prog] : NULL;
     if (!p) { LOG_ONCE("draw without a program"); return 0; }
     if (!prog_ready(p)) return 0;
+    for (int k = 0; k < nskip; k++) if (skip_hash[k] == p->src_hash[0] || skip_hash[k] == p->src_hash[1]) return 0;
     if (npcs)                                   // textures this draw samples must have their clears done
         for (int st = 0; st < 2; st++)
             for (int sm = 0; sm < p->nsamp[st]; sm++) {
@@ -1577,6 +1709,7 @@ static int prepare_draw(int vtx_first, int vtx_end, int instanced) {
             if (st == 0) { [enc setVertexTexture:t atIndex:s]; [enc setVertexSamplerState:smp atIndex:s]; }
             else { [enc setFragmentTexture:t atIndex:s]; [enc setFragmentSamplerState:smp atIndex:s]; }
         }
+    if (cap_on) capture_draw(p);
     return 1;
 }
 
@@ -2296,6 +2429,7 @@ GLFN(void, glLinkProgram, GLuint p) {
     if (pr && vs && fs && vs->src && fs->src) {
         free(pr->src[0]); free(pr->src[1]); free(pr->block[0]); free(pr->block[1]);
         pr->src[0] = strdup(vs->src); pr->src[1] = strdup(fs->src);
+        for (int st = 0; st < 2; st++) pr->src_hash[st] = fnv64(1469598103934665603ull, pr->src[st], strlen(pr->src[st]));
         pr->nu = 0;
         for (int st = 0; st < 2; st++) {
             int bo;
@@ -2420,6 +2554,14 @@ GLFN(void, glShaderSource, GLuint s, GLsizei count, const char *const *str, cons
             memcpy(p, str[k], n); p += n;
         }
         *p = 0;
+        const char *dump = getenv("RT_METAL_SHADERDUMP");   // directory: save each distinct GLSL source the game sends
+        if (dump) {
+            char path[600];
+            snprintf(path, sizeof path, "%s/%016llx.%s", dump, (unsigned long long)fnv64(1469598103934665603ull, sh->src, total),
+                     sh->type == GL_VERTEX_SHADER ? "vert" : "frag");
+            FILE *f = fopen(path, "wx");
+            if (f) { fwrite(sh->src, 1, total, f); fclose(f); }
+        }
         stage_precompile(sh);
     }
     unlock();
@@ -2754,6 +2896,8 @@ void mgl_present(void) {
     ensure_backbuffer();
     pc_flush(back_color);
     snapshot();
+    capture_frame();
+    skip_reload();
     {
         static long want = -2;
         if (want == -2) want = getenv("RT_METAL_PASSLOG") ? atol(getenv("RT_METAL_PASSLOG")) : -1;
